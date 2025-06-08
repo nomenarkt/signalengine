@@ -19,10 +19,12 @@ import (
 
 // FinageAdapter implements the MarketFeedPort using the Finage WebSocket API.
 type FinageAdapter struct {
-	apiKey  string
-	baseURL string
-	logger  *slog.Logger
-	dialer  *websocket.Dialer
+	apiKey     string
+	baseURL    string
+	logger     *slog.Logger
+	dialer     *websocket.Dialer
+	now        func() time.Time
+	staleAfter time.Duration
 }
 
 // NewFinageAdapter initializes a FinageAdapter with the FINAGE_API_KEY
@@ -34,10 +36,12 @@ func NewFinageAdapter(logger *slog.Logger, dialer *websocket.Dialer) *FinageAdap
 		dialer = websocket.DefaultDialer
 	}
 	return &FinageAdapter{
-		apiKey:  os.Getenv("FINAGE_API_KEY"),
-		baseURL: "wss://api.finage.co.uk/agg/forex",
-		logger:  logger,
-		dialer:  dialer,
+		apiKey:     os.Getenv("FINAGE_API_KEY"),
+		baseURL:    "wss://api.finage.co.uk/agg/forex",
+		logger:     logger,
+		dialer:     dialer,
+		now:        time.Now,
+		staleAfter: 30 * time.Second,
 	}
 }
 
@@ -106,7 +110,7 @@ func (a *FinageAdapter) run(ctx context.Context, symbols []string, out chan port
 			continue
 		}
 
-		var lastRecv time.Time
+		lastRecv := a.now()
 
 		for {
 			if ctx.Err() != nil {
@@ -121,7 +125,6 @@ func (a *FinageAdapter) run(ctx context.Context, symbols []string, out chan port
 				conn.Close()
 				break
 			}
-			lastRecv = time.Now()
 
 			var fc finageCandle
 			if err := json.Unmarshal(message, &fc); err != nil {
@@ -162,11 +165,13 @@ func (a *FinageAdapter) run(ctx context.Context, symbols []string, out chan port
 				return
 			}
 
-			if time.Since(lastRecv) > 30*time.Second {
+			if a.now().Sub(lastRecv) > a.staleAfter {
 				a.logger.WarnContext(ctx, "stale stream detected, reconnecting")
 				conn.Close()
 				break
 			}
+
+			lastRecv = a.now()
 		}
 	}
 }

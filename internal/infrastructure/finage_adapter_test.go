@@ -82,6 +82,45 @@ func newWSServer(t *testing.T, handlers ...wsHandler) (*httptest.Server, *websoc
 	return srv, dialer
 }
 
+func newWSServerNoFail(t *testing.T, handlers ...wsHandler) (*httptest.Server, *websocket.Dialer) {
+	t.Helper()
+
+	var (
+		mu       sync.Mutex
+		idx      int
+		upgrader = websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
+	)
+
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		var h wsHandler
+		if idx < len(handlers) {
+			h = handlers[idx]
+			idx++
+		}
+		mu.Unlock()
+
+		c, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			t.Fatalf("upgrade error: %v", err)
+		}
+		if h != nil {
+			h(c)
+		} else {
+			c.Close()
+		}
+	}))
+
+	dialer := &websocket.Dialer{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		NetDialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			return (&net.Dialer{}).DialContext(ctx, network, srv.Listener.Addr().String())
+		},
+	}
+
+	return srv, dialer
+}
+
 func candleMsg(sym string, ts time.Time) []byte {
 	b, _ := json.Marshal(finageCandle{
 		Symbol:    sym,
@@ -100,8 +139,15 @@ func TestFinageAdapter_StreamCandles(t *testing.T) {
 
 	now := time.Now()
 
-	newAdapter := func(d *websocket.Dialer) *FinageAdapter {
-		return NewFinageAdapter(slog.New(slog.NewTextHandler(io.Discard, nil)), d)
+	newAdapter := func(d *websocket.Dialer, nowFn func() time.Time, stale time.Duration) *FinageAdapter {
+		a := NewFinageAdapter(slog.New(slog.NewTextHandler(io.Discard, nil)), d)
+		if nowFn != nil {
+			a.now = nowFn
+		}
+		if stale != 0 {
+			a.staleAfter = stale
+		}
+		return a
 	}
 
 	t.Run("normal streaming", func(t *testing.T) {
@@ -123,7 +169,7 @@ func TestFinageAdapter_StreamCandles(t *testing.T) {
 		srv, dialer := newWSServer(t, handler)
 		defer srv.Close()
 
-		a := newAdapter(dialer)
+		a := newAdapter(dialer, nil, 0)
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		defer cancel()
 
@@ -160,7 +206,7 @@ func TestFinageAdapter_StreamCandles(t *testing.T) {
 		srv, dialer := newWSServer(t, first, second)
 		defer srv.Close()
 
-		a := newAdapter(dialer)
+		a := newAdapter(dialer, nil, 0)
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
 
@@ -185,7 +231,7 @@ func TestFinageAdapter_StreamCandles(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
 
-		a := newAdapter(websocket.DefaultDialer)
+		a := newAdapter(websocket.DefaultDialer, nil, 0)
 		ch, err := a.StreamCandles(ctx, []string{"EURUSD"})
 		if err != nil {
 			t.Fatalf("stream: %v", err)
@@ -193,6 +239,65 @@ func TestFinageAdapter_StreamCandles(t *testing.T) {
 
 		if _, ok := <-ch; ok {
 			t.Fatalf("expected closed channel")
+		}
+	})
+
+	t.Run("reconnect on stale stream", func(t *testing.T) {
+		var reconnected bool
+
+		first := func(c *websocket.Conn) {
+			defer c.Close()
+			c.ReadMessage()
+			_ = c.WriteMessage(websocket.TextMessage, candleMsg("EURUSD", now))
+			time.Sleep(40 * time.Millisecond)
+			_ = c.WriteMessage(websocket.TextMessage, candleMsg("EURUSD", now.Add(40*time.Millisecond)))
+			time.Sleep(10 * time.Millisecond)
+		}
+
+		second := func(c *websocket.Conn) {
+			reconnected = true
+			defer c.Close()
+			c.ReadMessage()
+			_ = c.WriteMessage(websocket.TextMessage, candleMsg("EURUSD", now.Add(50*time.Millisecond)))
+			time.Sleep(200 * time.Millisecond)
+		}
+
+		var thirdConn bool
+		third := func(c *websocket.Conn) {
+			thirdConn = true
+			c.Close()
+		}
+		dummy := func(c *websocket.Conn) { c.Close() }
+
+		srv, dialer := newWSServerNoFail(t, first, second, third, dummy, dummy)
+		defer srv.Close()
+
+		a := newAdapter(dialer, nil, 30*time.Millisecond)
+		ctx, cancel := context.WithCancel(context.Background())
+
+		ch, err := a.StreamCandles(ctx, []string{"EURUSD"})
+		if err != nil {
+			t.Fatalf("stream: %v", err)
+		}
+
+		for i := 0; i < 3; i++ {
+			select {
+			case <-time.After(time.Second):
+				t.Fatalf("timeout waiting for candle %d", i)
+			case _, ok := <-ch:
+				if !ok {
+					t.Fatalf("channel closed early")
+				}
+			}
+		}
+
+		cancel()
+
+		if !reconnected {
+			t.Fatalf("expected reconnection due to stale stream")
+		}
+		if thirdConn {
+			t.Fatalf("unexpected extra connection")
 		}
 	})
 }
