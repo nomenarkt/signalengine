@@ -37,13 +37,20 @@ func ScoreRSIDivergence(ctx context.Context, logger *slog.Logger, symbol string,
 	}
 
 	prevHighIdx, prevLowIdx := 0, 0
+	var highFound, lowFound bool
 	for i := 1; i < lookback; i++ {
 		if c[i].High > c[prevHighIdx].High {
 			prevHighIdx = i
+			highFound = true
 		}
 		if c[i].Low < c[prevLowIdx].Low {
 			prevLowIdx = i
+			lowFound = true
 		}
+	}
+	if !highFound && !lowFound {
+		logger.WarnContext(ctx, "no swing points found")
+		return nil
 	}
 
 	latest := len(c) - 1
@@ -51,25 +58,31 @@ func ScoreRSIDivergence(ctx context.Context, logger *slog.Logger, symbol string,
 
 	// Bearish divergence: price higher high but RSI lower high
 	if c[latest].High > c[prevHighIdx].High && r[latest] < r[prevHighIdx] {
-		if revDir(c[len(c)-3:]) == "DOWN" {
+		dir := revDir(ctx, logger, c[len(c)-3:])
+		if dir == "DOWN" {
 			signals = append(signals, entity.Signal{
 				Symbol:     symbol,
 				Direction:  "DOWN",
 				Confidence: 0.8,
 				TTL:        2 * time.Minute,
 			})
+		} else {
+			logger.InfoContext(ctx, "divergence without reversal", "expected", "DOWN", "got", dir)
 		}
 	}
 
 	// Bullish divergence: price lower low but RSI higher low
 	if c[latest].Low < c[prevLowIdx].Low && r[latest] > r[prevLowIdx] {
-		if revDir(c[len(c)-3:]) == "UP" {
+		dir := revDir(ctx, logger, c[len(c)-3:])
+		if dir == "UP" {
 			signals = append(signals, entity.Signal{
 				Symbol:     symbol,
 				Direction:  "UP",
 				Confidence: 0.8,
 				TTL:        2 * time.Minute,
 			})
+		} else {
+			logger.InfoContext(ctx, "divergence without reversal", "expected", "UP", "got", dir)
 		}
 	}
 
@@ -77,7 +90,10 @@ func ScoreRSIDivergence(ctx context.Context, logger *slog.Logger, symbol string,
 }
 
 // revDir checks the last up to 3 candles for a reversal pattern and returns "UP", "DOWN", or "".
-func revDir(c []ports.Candle) string {
+func revDir(ctx context.Context, logger *slog.Logger, c []ports.Candle) string {
+	if logger == nil {
+		logger = slog.Default()
+	}
 	n := len(c)
 	for i := n - 1; i >= 0; i-- {
 		if isBullishEngulfing(c, i) || isBullishPinBar(c[i]) {
@@ -87,6 +103,7 @@ func revDir(c []ports.Candle) string {
 			return "DOWN"
 		}
 	}
+	logger.DebugContext(ctx, "no reversal pattern found")
 	return ""
 }
 

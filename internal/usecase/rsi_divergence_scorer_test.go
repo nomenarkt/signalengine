@@ -1,9 +1,11 @@
 package usecase
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -78,6 +80,31 @@ func TestScoreRSIDivergence(t *testing.T) {
 		sigs := ScoreRSIDivergence(ctx, logger, "EURUSD", candles, r)
 		if len(sigs) != 0 {
 			t.Fatalf("expected no signals, got %d", len(sigs))
+		}
+	})
+
+	t.Run("logs when no reversal detected", func(t *testing.T) {
+		candles, r := makeCandles(false)
+		buf := &bytes.Buffer{}
+		log := slog.New(slog.NewTextHandler(buf, nil))
+		ScoreRSIDivergence(ctx, log, "EURUSD", candles, r)
+		if !strings.Contains(buf.String(), "divergence without reversal") {
+			t.Errorf("expected log entry, got %s", buf.String())
+		}
+	})
+
+	t.Run("logs when swing points missing", func(t *testing.T) {
+		candles := make([]ports.Candle, 20)
+		r := make([]float64, 20)
+		for i := 0; i < 20; i++ {
+			candles[i] = ports.Candle{Symbol: "EURUSD", Time: baseTime.Add(time.Duration(i) * time.Minute), Open: 1, High: 1, Low: 1, Close: 1}
+			r[i] = 50
+		}
+		buf := &bytes.Buffer{}
+		log := slog.New(slog.NewTextHandler(buf, nil))
+		ScoreRSIDivergence(ctx, log, "EURUSD", candles, r)
+		if !strings.Contains(buf.String(), "no swing points found") {
+			t.Errorf("expected swing point log, got %s", buf.String())
 		}
 	})
 }
