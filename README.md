@@ -31,5 +31,6 @@ Follows Clean Architecture:
 
 ## Configuration
 
-Copy `.env.example` to `.env` and provide your API keys and settings. The
-application will load variables from `.env` at startup.
+Copy `.env.example` to `.env` and provide your API keys and settings. Set
+`OANDA_API_KEY`, `FINAGE_API_KEY`, and `TELEGRAM_BOT_TOKEN` with your
+credentials. The application will load variables from `.env` at startup.
