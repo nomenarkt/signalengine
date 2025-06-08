@@ -22,15 +22,22 @@ type FinageAdapter struct {
 	apiKey  string
 	baseURL string
 	logger  *slog.Logger
+	dialer  *websocket.Dialer
 }
 
 // NewFinageAdapter initializes a FinageAdapter with the FINAGE_API_KEY
 // environment variable. The provided logger will be used for structured logging.
-func NewFinageAdapter(logger *slog.Logger) *FinageAdapter {
+// Optionally a custom websocket.Dialer can be supplied; otherwise the
+// websocket.DefaultDialer is used.
+func NewFinageAdapter(logger *slog.Logger, dialer *websocket.Dialer) *FinageAdapter {
+	if dialer == nil {
+		dialer = websocket.DefaultDialer
+	}
 	return &FinageAdapter{
 		apiKey:  os.Getenv("FINAGE_API_KEY"),
 		baseURL: "wss://api.finage.co.uk/agg/forex",
 		logger:  logger,
+		dialer:  dialer,
 	}
 }
 
@@ -77,7 +84,7 @@ func (a *FinageAdapter) run(ctx context.Context, symbols []string, out chan port
 		u := url.URL{Scheme: "wss", Host: "api.finage.co.uk", Path: "/agg/forex", RawQuery: "apikey=" + url.QueryEscape(a.apiKey)}
 		a.logger.With("url", u.String()).InfoContext(ctx, "connecting to Finage")
 
-		conn, _, err := websocket.DefaultDialer.DialContext(ctx, u.String(), nil)
+		conn, _, err := a.dialer.DialContext(ctx, u.String(), nil)
 		if err != nil {
 			a.logger.ErrorContext(ctx, "connection failed", "error", err)
 			if !sleep(ctx, backoff) {
@@ -99,7 +106,7 @@ func (a *FinageAdapter) run(ctx context.Context, symbols []string, out chan port
 			continue
 		}
 
-		lastRecv := time.Now()
+		var lastRecv time.Time
 
 		for {
 			if ctx.Err() != nil {
