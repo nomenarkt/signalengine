@@ -35,7 +35,7 @@ func TestNewFinageAdapter_Dialer(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			a := NewFinageAdapter(slog.New(slog.NewTextHandler(io.Discard, nil)), tt.dialer)
+			a := NewFinageAdapter(slog.New(slog.NewTextHandler(io.Discard, nil)), tt.dialer, nil)
 			if a.dialer != tt.expect {
 				t.Fatalf("expected %v, got %v", tt.expect, a.dialer)
 			}
@@ -70,6 +70,37 @@ func newWSServer(t *testing.T, handlers ...wsHandler) (*httptest.Server, *websoc
 			t.Fatalf("upgrade error: %v", err)
 		}
 		h(c)
+	}))
+
+	dialer := &websocket.Dialer{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		NetDialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			return (&net.Dialer{}).DialContext(ctx, network, srv.Listener.Addr().String())
+		},
+	}
+
+	return srv, dialer
+}
+
+func newFailDialServer(t *testing.T, handler wsHandler) (*httptest.Server, *websocket.Dialer) {
+	t.Helper()
+
+	var (
+		first    = true
+		upgrader = websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
+	)
+
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if first {
+			first = false
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		c, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			t.Fatalf("upgrade error: %v", err)
+		}
+		handler(c)
 	}))
 
 	dialer := &websocket.Dialer{
@@ -121,6 +152,13 @@ func newWSServerNoFail(t *testing.T, handlers ...wsHandler) (*httptest.Server, *
 	return srv, dialer
 }
 
+type mockBackoff struct{ calls []int }
+
+func (m *mockBackoff) Next(retry int) time.Duration {
+	m.calls = append(m.calls, retry)
+	return 0
+}
+
 func candleMsg(sym string, ts time.Time) []byte {
 	b, _ := json.Marshal(finageCandle{
 		Symbol:    sym,
@@ -140,7 +178,7 @@ func TestFinageAdapter_StreamCandles(t *testing.T) {
 	now := time.Now()
 
 	newAdapter := func(d *websocket.Dialer, nowFn func() time.Time, stale time.Duration) *FinageAdapter {
-		a := NewFinageAdapter(slog.New(slog.NewTextHandler(io.Discard, nil)), d)
+		a := NewFinageAdapter(slog.New(slog.NewTextHandler(io.Discard, nil)), d, nil)
 		if nowFn != nil {
 			a.now = nowFn
 		}
@@ -298,6 +336,38 @@ func TestFinageAdapter_StreamCandles(t *testing.T) {
 		}
 		if thirdConn {
 			t.Fatalf("unexpected extra connection")
+		}
+	})
+
+	t.Run("backoff on dial failure", func(t *testing.T) {
+		now := time.Now()
+		handler := func(c *websocket.Conn) {
+			defer c.Close()
+			c.ReadMessage()
+			_ = c.WriteMessage(websocket.TextMessage, candleMsg("EURUSD", now))
+		}
+
+		srv, dialer := newFailDialServer(t, handler)
+		defer srv.Close()
+
+		mb := &mockBackoff{}
+		a := NewFinageAdapter(slog.New(slog.NewTextHandler(io.Discard, nil)), dialer, mb)
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+
+		ch, err := a.StreamCandles(ctx, []string{"EURUSD"})
+		if err != nil {
+			t.Fatalf("stream: %v", err)
+		}
+
+		select {
+		case <-ch:
+		case <-time.After(time.Second):
+			t.Fatalf("timeout waiting for candle")
+		}
+
+		if len(mb.calls) == 0 {
+			t.Fatalf("expected backoff to be called")
 		}
 	})
 }

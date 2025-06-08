@@ -22,3 +22,15 @@ type MarketFeedPort interface {
 	// The channel is closed when the context is canceled or an error occurs.
 	StreamCandles(ctx context.Context, symbols []string) (<-chan Candle, error)
 }
+
+// MarketFeedAdapter represents a provider-specific implementation of a
+// market feed.
+type MarketFeedAdapter interface {
+	MarketFeedPort
+}
+
+// BackoffStrategy computes the delay before retrying a failed connection.
+type BackoffStrategy interface {
+	// Next returns the duration to wait before the given retry attempt.
+	Next(retry int) time.Duration
+}
