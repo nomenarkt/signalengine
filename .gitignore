@@ -12,3 +12,4 @@ vendor/
 
 # Env
 .env
+env
