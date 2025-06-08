@@ -1,6 +1,9 @@
 package usecase
 
 import (
+	"context"
+	"io"
+	"log/slog"
 	"testing"
 	"time"
 
@@ -55,9 +58,12 @@ func TestScoreRSIDivergence(t *testing.T) {
 		return candles, rsi
 	}
 
+	ctx := context.Background()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+
 	t.Run("bullish divergence with reversal", func(t *testing.T) {
 		candles, r := makeCandles(true)
-		sigs := ScoreRSIDivergence("EURUSD", candles, r)
+		sigs := ScoreRSIDivergence(ctx, logger, "EURUSD", candles, r)
 		if len(sigs) != 1 {
 			t.Fatalf("expected 1 signal, got %d", len(sigs))
 		}
@@ -69,7 +75,7 @@ func TestScoreRSIDivergence(t *testing.T) {
 
 	t.Run("no signal without reversal candle", func(t *testing.T) {
 		candles, r := makeCandles(false)
-		sigs := ScoreRSIDivergence("EURUSD", candles, r)
+		sigs := ScoreRSIDivergence(ctx, logger, "EURUSD", candles, r)
 		if len(sigs) != 0 {
 			t.Fatalf("expected no signals, got %d", len(sigs))
 		}

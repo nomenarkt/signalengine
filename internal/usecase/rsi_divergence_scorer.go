@@ -1,6 +1,8 @@
 package usecase
 
 import (
+	"context"
+	"log/slog"
 	"math"
 	"time"
 
@@ -10,9 +12,15 @@ import (
 
 // ScoreRSIDivergence looks for RSI divergence reversal setups over the provided candles and rsi values.
 // It returns binary trade signals with a typical TTL of 2 minutes.
-func ScoreRSIDivergence(symbol string, candles []ports.Candle, rsi []float64) []entity.Signal {
+func ScoreRSIDivergence(ctx context.Context, logger *slog.Logger, symbol string, candles []ports.Candle, rsi []float64) []entity.Signal {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	logger.InfoContext(ctx, "score RSI divergence", "symbol", symbol)
+
 	n := len(candles)
 	if n < 20 || n != len(rsi) {
+		logger.WarnContext(ctx, "insufficient data", "candles", n, "rsi_len", len(rsi))
 		return nil
 	}
 
@@ -24,6 +32,7 @@ func ScoreRSIDivergence(symbol string, candles []ports.Candle, rsi []float64) []
 	// Find previous swing high/low excluding last 3 bars
 	lookback := len(c) - 3
 	if lookback <= 0 {
+		logger.WarnContext(ctx, "insufficient candles for swing lookup")
 		return nil
 	}
 
