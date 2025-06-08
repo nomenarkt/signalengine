@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/nomenarkt/signalengine/internal/ports"
+	"github.com/nomenarkt/signalengine/internal/usecase"
 )
 
 type mockFeed struct{ candles []ports.Candle }
@@ -64,14 +65,22 @@ func TestOrchestrator_Run(t *testing.T) {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
-			feed := &mockFeed{candles: makeCandles(tt.bullish)}
+			candles := makeCandles(tt.bullish)
+			closes := make([]float64, len(candles))
+			for i := range candles {
+				closes[i] = candles[i].Close
+			}
+			rsi := usecase.CalcRSI(closes, 14)
+			expected := usecase.ScoreRSIDivergence(ctx, slog.New(slog.NewTextHandler(io.Discard, nil)), "EURUSD", candles, rsi)
+
+			feed := &mockFeed{candles: candles}
 			pub := &mockPublisher{}
 			o := NewOrchestrator(feed, pub, slog.New(slog.NewTextHandler(io.Discard, nil)))
 			if err := o.Run(ctx, []string{"EURUSD"}); err != nil {
 				t.Fatalf("run: %v", err)
 			}
-			if len(pub.msgs) != tt.expect {
-				t.Fatalf("expected %d messages, got %d", tt.expect, len(pub.msgs))
+			if len(pub.msgs) != len(expected) {
+				t.Fatalf("expected %d messages, got %d", len(expected), len(pub.msgs))
 			}
 		})
 	}
