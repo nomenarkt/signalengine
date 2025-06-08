@@ -28,3 +28,8 @@ Follows Clean Architecture:
 ├── configs/               # App config files
 ├── testutils/             # Mocks and helpers
 └── go.mod
+
+## Configuration
+
+Copy `.env.example` to `.env` and provide your API keys and settings. The
+application will load variables from `.env` at startup.
