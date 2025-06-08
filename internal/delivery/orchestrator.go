@@ -57,7 +57,7 @@ func (o *Orchestrator) Run(ctx context.Context, symbols []string) error {
 				closes[i] = candles[i].Close
 			}
 			rsi := calcRSI(closes, rsiPeriod)
-			signals := usecase.ScoreRSIDivergence(c.Symbol, candles, rsi)
+			signals := usecase.ScoreRSIDivergence(ctx, o.logger, c.Symbol, candles, rsi)
 			if len(signals) == 0 {
 				continue
 			}
