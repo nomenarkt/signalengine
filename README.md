@@ -31,5 +31,6 @@ Follows Clean Architecture:
 
 ## Configuration
 
-Copy `.env.example` to `.env` and provide your API keys and settings. The
-application will load variables from `.env` at startup.
+Copy `.env.example` to `.env` and provide your API keys and settings. Ensure
+`FINAGE_API_KEY` is set for the market feed. The application will load
+variables from `.env` at startup.
