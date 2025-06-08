@@ -17,7 +17,7 @@ import (
 	"github.com/nomenarkt/signalengine/internal/ports"
 )
 
-// FinageAdapter implements the MarketFeedPort using the Finage WebSocket API.
+// FinageAdapter implements the MarketFeedAdapter using the Finage WebSocket API.
 type FinageAdapter struct {
 	apiKey     string
 	baseURL    string
@@ -25,15 +25,34 @@ type FinageAdapter struct {
 	dialer     *websocket.Dialer
 	now        func() time.Time
 	staleAfter time.Duration
+	backoff    ports.BackoffStrategy
+}
+
+// ExponentialBackoff implements a simple exponential backoff strategy.
+type ExponentialBackoff struct {
+	Base time.Duration
+	Max  time.Duration
+}
+
+// Next returns the next backoff duration for the given retry attempt.
+func (e ExponentialBackoff) Next(retry int) time.Duration {
+	d := e.Base << retry
+	if d > e.Max {
+		return e.Max
+	}
+	return d
 }
 
 // NewFinageAdapter initializes a FinageAdapter with the FINAGE_API_KEY
 // environment variable. The provided logger will be used for structured logging.
 // Optionally a custom websocket.Dialer can be supplied; otherwise the
 // websocket.DefaultDialer is used.
-func NewFinageAdapter(logger *slog.Logger, dialer *websocket.Dialer) *FinageAdapter {
+func NewFinageAdapter(logger *slog.Logger, dialer *websocket.Dialer, backoff ports.BackoffStrategy) *FinageAdapter {
 	if dialer == nil {
 		dialer = websocket.DefaultDialer
+	}
+	if backoff == nil {
+		backoff = ExponentialBackoff{Base: time.Second, Max: 30 * time.Second}
 	}
 	return &FinageAdapter{
 		apiKey:     os.Getenv("FINAGE_API_KEY"),
@@ -42,6 +61,7 @@ func NewFinageAdapter(logger *slog.Logger, dialer *websocket.Dialer) *FinageAdap
 		dialer:     dialer,
 		now:        time.Now,
 		staleAfter: 30 * time.Second,
+		backoff:    backoff,
 	}
 }
 
@@ -78,7 +98,7 @@ func (a *FinageAdapter) run(ctx context.Context, symbols []string, out chan port
 	lastTS := make(map[string]time.Time)
 	var mu sync.Mutex
 
-	backoff := time.Second
+	retries := 0
 
 	for {
 		if ctx.Err() != nil {
@@ -91,20 +111,21 @@ func (a *FinageAdapter) run(ctx context.Context, symbols []string, out chan port
 		conn, _, err := a.dialer.DialContext(ctx, u.String(), nil)
 		if err != nil {
 			a.logger.ErrorContext(ctx, "connection failed", "error", err)
-			if !sleep(ctx, backoff) {
+			wait := a.backoff.Next(retries)
+			retries++
+			if !sleep(ctx, wait) {
 				return
-			}
-			if backoff < 30*time.Second {
-				backoff *= 2
 			}
 			continue
 		}
 
-		backoff = time.Second
+		retries = 0
 		if err := a.subscribe(conn, symbols); err != nil {
 			a.logger.ErrorContext(ctx, "subscription failed", "error", err)
 			conn.Close()
-			if !sleep(ctx, backoff) {
+			wait := a.backoff.Next(retries)
+			retries++
+			if !sleep(ctx, wait) {
 				return
 			}
 			continue
@@ -173,6 +194,7 @@ func (a *FinageAdapter) run(ctx context.Context, symbols []string, out chan port
 
 			lastRecv = a.now()
 		}
+
 	}
 }
 
