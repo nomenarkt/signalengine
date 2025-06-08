@@ -14,3 +14,17 @@ Follows Clean Architecture:
 - **internal/delivery/**: HTTP, Telegram
 - **configs/**: Environment and settings
 - **testutils/**: Testing mocks and stubs
+
+
+/backend
+├── cmd/                   # App entrypoints
+│   └── signalengine/
+├── internal/
+│   ├── entity/            # Core domain objects
+│   ├── usecase/           # Business rules
+│   ├── interface/         # Ports (interfaces)
+│   ├── infrastructure/    # API adapters, DB clients
+│   └── delivery/          # Telegram/REST handlers
+├── configs/               # App config files
+├── testutils/             # Mocks and helpers
+└── go.mod
