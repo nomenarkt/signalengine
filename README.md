@@ -9,7 +9,7 @@ Follows Clean Architecture:
 - **cmd/**: App entrypoint
 - **internal/entity/**: Core domain models
 - **internal/usecase/**: Business logic
-- **internal/interface/**: Port interfaces
+- **internal/ports/**: Port interfaces
 - **internal/infrastructure/**: API, DB clients
 - **internal/delivery/**: HTTP, Telegram
 - **configs/**: Environment and settings
@@ -22,7 +22,7 @@ Follows Clean Architecture:
 ├── internal/
 │   ├── entity/            # Core domain objects
 │   ├── usecase/           # Business rules
-│   ├── interface/         # Ports (interfaces)
+│   ├── ports/             # Ports (interfaces)
 │   ├── infrastructure/    # API adapters, DB clients
 │   └── delivery/          # Telegram/REST handlers
 ├── configs/               # App config files
