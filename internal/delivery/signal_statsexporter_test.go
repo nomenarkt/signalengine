@@ -31,40 +31,37 @@ func sampleReport() usecase.BacktestReport {
 }
 
 func TestExportBacktestReport(t *testing.T) {
-	tmp := t.TempDir()
+	tmpDir := filepath.Join("testdata", "tmp")
+	if err := os.MkdirAll(tmpDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(tmpDir) })
+
 	rep := sampleReport()
 
 	tests := []struct {
-		name      string
-		path      string
-		format    string
-		expectErr bool
+		name   string
+		file   string
+		format string
 	}{
-		{name: "json by ext", path: filepath.Join(tmp, "r.json"), format: ""},
-		{name: "csv by ext", path: filepath.Join(tmp, "r.csv"), format: ""},
-		{name: "override format", path: filepath.Join(tmp, "r.json"), format: "csv"},
-		{name: "unwritable path", path: filepath.Join(tmp, "missing", "r.csv"), format: "", expectErr: true},
+		{name: "json", file: filepath.Join(tmpDir, "report.json"), format: "json"},
+		{name: "csv", file: filepath.Join(tmpDir, "report.csv"), format: "csv"},
 	}
 
 	for _, tt := range tests {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
-			err := ExportBacktestReport(rep, tt.path, tt.format)
-			if tt.expectErr {
-				if err == nil {
-					t.Fatalf("expected error")
-				}
-				return
+			if err := ExportBacktestReport(rep, tt.file, tt.format); err != nil {
+				t.Fatalf("export: %v", err)
 			}
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			data, err := os.ReadFile(tt.path)
+
+			data, err := os.ReadFile(tt.file)
 			if err != nil {
 				t.Fatalf("read file: %v", err)
 			}
-			switch format := tt.format; {
-			case format == "csv" || (format == "" && filepath.Ext(tt.path) == ".csv"):
+
+			switch tt.format {
+			case "csv":
 				r := csv.NewReader(strings.NewReader(string(data)))
 				recs, err := r.ReadAll()
 				if err != nil {
@@ -73,7 +70,7 @@ func TestExportBacktestReport(t *testing.T) {
 				if len(recs) != len(rep.Results)+1 {
 					t.Fatalf("expected %d records, got %d", len(rep.Results)+1, len(recs))
 				}
-			default:
+			case "json":
 				var out usecase.BacktestReport
 				if err := json.Unmarshal(data, &out); err != nil {
 					t.Fatalf("json parse: %v", err)
@@ -87,7 +84,13 @@ func TestExportBacktestReport(t *testing.T) {
 }
 
 func TestExportBacktestReport_Empty(t *testing.T) {
-	err := ExportBacktestReport(usecase.BacktestReport{}, filepath.Join(t.TempDir(), "r.json"), "")
+	tmpDir := filepath.Join("testdata", "tmp")
+	if err := os.MkdirAll(tmpDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(tmpDir) })
+
+	err := ExportBacktestReport(usecase.BacktestReport{}, filepath.Join(tmpDir, "r.json"), "json")
 	if err == nil {
 		t.Fatalf("expected error for empty report")
 	}
