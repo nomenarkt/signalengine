@@ -57,7 +57,14 @@ func (o *Orchestrator) Run(ctx context.Context, symbols []string) error {
 				closes[i] = candles[i].Close
 			}
 			rsi := usecase.CalcRSI(closes, rsiPeriod)
-			signals := usecase.ScoreRSIDivergence(ctx, o.logger, c.Symbol, candles, rsi)
+			ema8 := usecase.CalcEMA(closes, 8)
+			ema21 := usecase.CalcEMA(closes, 21)
+
+			signals, err := usecase.ScanSignalPatterns(ctx, o.logger, c.Symbol, candles, rsi, ema8, ema21)
+			if err != nil {
+				o.logger.ErrorContext(ctx, "scan patterns", "error", err)
+				continue
+			}
 			if len(signals) == 0 {
 				continue
 			}
