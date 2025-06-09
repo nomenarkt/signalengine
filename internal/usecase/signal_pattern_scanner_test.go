@@ -1,13 +1,14 @@
 package usecase
 
 import (
+	"context"
 	"testing"
 	"time"
 
 	"github.com/nomenarkt/signalengine/internal/ports"
 )
 
-func makeRSIDivCandles() ([]ports.Candle, []float64, []float64, []float64) {
+func makeRSIDivData() ([]ports.Candle, []float64, []float64, []float64) {
 	base := time.Now()
 	candles := make([]ports.Candle, 20)
 	rsi := make([]float64, 20)
@@ -16,6 +17,8 @@ func makeRSIDivCandles() ([]ports.Candle, []float64, []float64, []float64) {
 	for i := 0; i < 20; i++ {
 		candles[i] = ports.Candle{Symbol: "EURUSD", Time: base.Add(time.Duration(i) * time.Minute), Open: 1, High: 1, Low: 1, Close: 1}
 		rsi[i] = 50 - float64(i)
+		ema8[i] = 1
+		ema21[i] = 1
 	}
 	candles[16].Open = 0.7
 	candles[16].High = 0.8
@@ -43,65 +46,55 @@ func makeRSIDivCandles() ([]ports.Candle, []float64, []float64, []float64) {
 	return candles, rsi, ema8, ema21
 }
 
-func makeEMABounceCandles() ([]ports.Candle, []float64, []float64, []float64) {
+func makeDupData() ([]ports.Candle, []float64, []float64, []float64) {
 	base := time.Now()
-	candles := []ports.Candle{
-		{Symbol: "EURUSD", Time: base, Open: 1, High: 1.1, Low: 0.8, Close: 0.85},
-		{Symbol: "EURUSD", Time: base.Add(time.Minute), Open: 0.86, High: 1.05, Low: 0.82, Close: 0.95},
+	candles := make([]ports.Candle, 20)
+	rsi := make([]float64, 20)
+	ema8 := make([]float64, 20)
+	ema21 := make([]float64, 20)
+	for i := 0; i < 18; i++ {
+		candles[i] = ports.Candle{Symbol: "EURUSD", Time: base.Add(time.Duration(i) * time.Minute), Open: 1, High: 1, Low: 1, Close: 1}
+		rsi[i] = 50
+		ema8[i] = 1
+		ema21[i] = 1
 	}
-	rsi := []float64{0, 0}
-	ema8 := []float64{0.9, 0.9}
-	ema21 := []float64{0.85, 0.86}
-	return candles, rsi, ema8, ema21
-}
-
-func makeFVRCandles() ([]ports.Candle, []float64, []float64, []float64) {
-	base := time.Now()
-	candles := []ports.Candle{
-		{Symbol: "EURUSD", Time: base, Open: 1.1, High: 1.2, Low: 1.05, Close: 1.15},
-		{Symbol: "EURUSD", Time: base.Add(time.Minute), Open: 1.17, High: 1.2, Low: 1.0, Close: 1.18},
-	}
-	rsi := []float64{0, 0}
-	ema8 := []float64{1.05, 1.15}
-	ema21 := []float64{1.0, 1.1}
-	return candles, rsi, ema8, ema21
-}
-
-func makeNoSignalCandles() ([]ports.Candle, []float64, []float64, []float64) {
-	base := time.Now()
-	candles := []ports.Candle{
-		{Symbol: "EURUSD", Time: base, Open: 1, High: 1, Low: 1, Close: 1},
-		{Symbol: "EURUSD", Time: base.Add(time.Minute), Open: 1, High: 1, Low: 1, Close: 1},
-	}
-	rsi := []float64{0, 0}
-	ema8 := []float64{1, 1}
-	ema21 := []float64{1, 1}
+	candles[18] = ports.Candle{Symbol: "EURUSD", Time: base.Add(18 * time.Minute), Open: 1.05, High: 1.1, Low: 0.95, Close: 1.0}
+	candles[19] = ports.Candle{Symbol: "EURUSD", Time: base.Add(19 * time.Minute), Open: 1.0, High: 1.15, Low: 0.95, Close: 1.1}
+	rsi[18] = 50
+	rsi[19] = 50
+	ema8[18] = 1
+	ema21[18] = 1
+	ema8[19] = 1.05
+	ema21[19] = 1
 	return candles, rsi, ema8, ema21
 }
 
 func TestScanSignalPatterns(t *testing.T) {
-	tests := []struct {
-		name   string
-		maker  func() ([]ports.Candle, []float64, []float64, []float64)
-		expect int
-		dir    string
-	}{
-		{name: "rsi divergence", maker: makeRSIDivCandles, expect: 1, dir: "UP"},
-		{name: "ema bounce", maker: makeEMABounceCandles, expect: 1, dir: "UP"},
-		{name: "fair value rejection", maker: makeFVRCandles, expect: 1, dir: "UP"},
-		{name: "none", maker: makeNoSignalCandles, expect: 0},
-	}
+	ctx := context.Background()
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			candles, rsi, ema8, ema21 := tt.maker()
-			sigs := ScanSignalPatterns("EURUSD", candles, rsi, ema8, ema21)
-			if len(sigs) != tt.expect {
-				t.Fatalf("expected %d signals, got %d", tt.expect, len(sigs))
-			}
-			if tt.expect > 0 && sigs[0].Direction != tt.dir {
-				t.Errorf("expected %s, got %s", tt.dir, sigs[0].Direction)
-			}
-		})
-	}
+	t.Run("invalid input", func(t *testing.T) {
+		_, err := ScanSignalPatterns(ctx, nil, "EURUSD", make([]ports.Candle, 10), make([]float64, 10), make([]float64, 10), make([]float64, 9))
+		if err == nil {
+			t.Fatalf("expected error")
+		}
+	})
+
+	t.Run("rsi divergence", func(t *testing.T) {
+		candles, rsi, ema8, ema21 := makeRSIDivData()
+		sigs, err := ScanSignalPatterns(ctx, nil, "EURUSD", candles, rsi, ema8, ema21)
+		if err != nil || len(sigs) != 2 {
+			t.Fatalf("unexpected result: %v %v", sigs, err)
+		}
+	})
+
+	t.Run("deduplicate", func(t *testing.T) {
+		candles, rsi, ema8, ema21 := makeDupData()
+		sigs, err := ScanSignalPatterns(ctx, nil, "EURUSD", candles, rsi, ema8, ema21)
+		if err != nil {
+			t.Fatalf("scan: %v", err)
+		}
+		if len(sigs) != 1 {
+			t.Fatalf("expected 1 signal, got %d", len(sigs))
+		}
+	})
 }

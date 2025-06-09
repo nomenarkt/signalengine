@@ -1,6 +1,8 @@
 package usecase
 
 import (
+	"context"
+	"log/slog"
 	"time"
 
 	"github.com/nomenarkt/signalengine/internal/ports"
@@ -48,10 +50,13 @@ func BacktestSignals(data map[string][]ports.Candle, delayBeforeEntry, expiry ti
 			}
 
 			rsi := CalcRSI(closes, rsiPeriod)
-			ema8 := calcEMA(closes, 8)
-			ema21 := calcEMA(closes, 21)
+			ema8 := CalcEMA(closes, 8)
+			ema21 := CalcEMA(closes, 21)
 
-			signals := ScanSignalPatterns(symbol, window, rsi, ema8, ema21)
+			signals, err := ScanSignalPatterns(context.Background(), slog.Default(), symbol, window, rsi, ema8, ema21)
+			if err != nil {
+				continue
+			}
 			if len(signals) == 0 {
 				continue
 			}
@@ -130,17 +135,4 @@ func sorted(c []ports.Candle) bool {
 		}
 	}
 	return true
-}
-
-func calcEMA(values []float64, period int) []float64 {
-	out := make([]float64, len(values))
-	if len(values) == 0 {
-		return out
-	}
-	k := 2.0 / float64(period+1)
-	out[0] = values[0]
-	for i := 1; i < len(values); i++ {
-		out[i] = values[i]*k + out[i-1]*(1-k)
-	}
-	return out
 }

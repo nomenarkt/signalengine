@@ -31,7 +31,12 @@ func expectedSignals(ctx context.Context, candles []ports.Candle) int {
 			closes[i] = data[i].Close
 		}
 		rsi := usecase.CalcRSI(closes, rsiPeriod)
-		signals := usecase.ScoreRSIDivergence(ctx, slog.New(slog.NewTextHandler(io.Discard, nil)), c.Symbol, data, rsi)
+		ema8 := usecase.CalcEMA(closes, 8)
+		ema21 := usecase.CalcEMA(closes, 21)
+		signals, err := usecase.ScanSignalPatterns(ctx, slog.New(slog.NewTextHandler(io.Discard, nil)), c.Symbol, data, rsi, ema8, ema21)
+		if err != nil {
+			continue
+		}
 		count += len(signals)
 	}
 	return count

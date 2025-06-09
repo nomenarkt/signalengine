@@ -71,7 +71,12 @@ func TestOrchestrator_Run(t *testing.T) {
 				closes[i] = candles[i].Close
 			}
 			rsi := usecase.CalcRSI(closes, 14)
-			expected := usecase.ScoreRSIDivergence(ctx, slog.New(slog.NewTextHandler(io.Discard, nil)), "EURUSD", candles, rsi)
+			ema8 := usecase.CalcEMA(closes, 8)
+			ema21 := usecase.CalcEMA(closes, 21)
+			expected, err := usecase.ScanSignalPatterns(ctx, slog.New(slog.NewTextHandler(io.Discard, nil)), "EURUSD", candles, rsi, ema8, ema21)
+			if err != nil {
+				t.Fatalf("scan patterns: %v", err)
+			}
 
 			feed := &mockFeed{candles: candles}
 			pub := &mockPublisher{}
