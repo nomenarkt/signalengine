@@ -1,6 +1,9 @@
 package usecase
 
 import (
+	"context"
+	"io"
+	"log/slog"
 	"testing"
 	"time"
 
@@ -39,7 +42,9 @@ func TestBacktestSignals_Generate(t *testing.T) {
 	data := map[string][]ports.Candle{
 		"EURUSD": makeSeries("EURUSD", true),
 	}
-	rep := BacktestSignals(data, 3*time.Minute, 2*time.Minute)
+	ctx := context.Background()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	rep := BacktestSignals(ctx, logger, data, 3*time.Minute, 2*time.Minute)
 	if rep.Total == 0 {
 		t.Fatalf("expected results")
 	}
@@ -53,7 +58,9 @@ func TestBacktestSignals_ReportCounts(t *testing.T) {
 		"WIN":  makeSeries("WIN", true),
 		"LOSS": makeSeries("LOSS", false),
 	}
-	rep := BacktestSignals(data, 3*time.Minute, 2*time.Minute)
+	ctx := context.Background()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	rep := BacktestSignals(ctx, logger, data, 3*time.Minute, 2*time.Minute)
 	if rep.Total != len(rep.Results) {
 		t.Fatalf("total mismatch")
 	}
