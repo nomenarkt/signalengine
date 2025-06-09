@@ -1,8 +1,11 @@
 package delivery
 
 import (
+	"context"
 	"encoding/csv"
 	"encoding/json"
+	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -46,7 +49,9 @@ func TestBacktestSignals_ExportIntegration(t *testing.T) {
 	data := map[string][]ports.Candle{
 		"EURUSD": makeSeries("EURUSD"),
 	}
-	rep := usecase.BacktestSignals(data, 3*time.Minute, 2*time.Minute)
+	ctx := context.Background()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	rep := usecase.BacktestSignals(ctx, logger, data, 3*time.Minute, 2*time.Minute)
 	if len(rep.Results) == 0 {
 		t.Fatalf("expected results from backtest")
 	}

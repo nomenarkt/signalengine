@@ -29,7 +29,10 @@ type BacktestReport struct {
 }
 
 // BacktestSignals replays historical candles and evaluates signal outcomes.
-func BacktestSignals(data map[string][]ports.Candle, delayBeforeEntry, expiry time.Duration) BacktestReport {
+func BacktestSignals(ctx context.Context, logger *slog.Logger, data map[string][]ports.Candle, delayBeforeEntry, expiry time.Duration) BacktestReport {
+	if logger == nil {
+		logger = slog.Default()
+	}
 	const (
 		windowSize = 50
 		rsiPeriod  = 14
@@ -53,7 +56,7 @@ func BacktestSignals(data map[string][]ports.Candle, delayBeforeEntry, expiry ti
 			ema8 := CalcEMA(closes, 8)
 			ema21 := CalcEMA(closes, 21)
 
-			signals, err := ScanSignalPatterns(context.Background(), slog.Default(), symbol, window, rsi, ema8, ema21)
+			signals, err := ScanSignalPatterns(ctx, logger, symbol, window, rsi, ema8, ema21)
 			if err != nil {
 				continue
 			}

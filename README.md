@@ -47,7 +47,7 @@ Supported formats:
 - `csv`
 
 ```go
-rep := usecase.BacktestSignals(data, 3*time.Minute, 2*time.Minute)
+rep := usecase.BacktestSignals(context.Background(), slog.Default(), data, 3*time.Minute, 2*time.Minute)
 err := delivery.ExportBacktestReport(rep, "testdata/tmp/out.json", "json")
 if err != nil {
     log.Fatal(err)
